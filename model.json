@@ -1,0 +1,9 @@
+{
+  "name": "HAIP Squad 07 · M3 dust-high model (logistic · time + dust 5 min ago)",
+  "threshold": 0.35,
+  "target": "dust_mv >= 300 mV in this 5-min row",
+  "rule": "alarm = dust_mv measured 5 minutes earlier >= TRIGGER[hour]",
+  "unseen_day_recall": 0.982,
+  "unseen_day_balanced_accuracy": 0.934,
+  "TRIGGER": [204, 211, 218, 225, 230, 234, 237, 236, 233, 229, 223, 216, 209, 202, 196, 190, 186, 184, 183, 183, 184, 187, 192, 198]
+}
