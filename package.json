@@ -1,0 +1,8 @@
+{
+  "name": "classroom-environment-guard",
+  "private": true,
+  "description": "교실 환경 지킴이 — PPSD 기말 프로젝트 (Squad 07)",
+  "dependencies": {
+    "@supabase/supabase-js": "2.45.4"
+  }
+}

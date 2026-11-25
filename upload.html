@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>측정 기록 올리기 · 교실 환경 지킴이</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #17262a; --sub: #56686d; --surface: #f5f8f8; --card: #ffffff;
+    --line: #cfdcdd; --teal: #12606b; --teal-soft: #e1eeef; --amber: #c96f22; --amber-soft: #fbeee2;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e4eeef; --sub: #9cb0b4; --surface: #0f1b1d; --card: #16262a;
+      --line: #2c4247; --teal: #6cc3cc; --teal-soft: #173a3f; --amber: #f0a868; --amber-soft: #3a2a1b;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font: 400 17px/1.6 "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 20px 80px; }
+  h1 { font-size: 34px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .lead { color: var(--sub); margin: 0 0 32px; }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; margin-bottom: 16px; }
+  .step h2 { font-size: 19px; margin: 0 0 12px; }
+  label.drop {
+    display: block; border: 2px dashed var(--line); border-radius: 12px; padding: 28px 16px;
+    text-align: center; cursor: pointer; color: var(--sub);
+  }
+  label.drop:hover, label.drop.over { border-color: var(--teal); background: var(--teal-soft); color: var(--ink); }
+  label.drop strong { display: block; color: var(--ink); font-size: 18px; margin-bottom: 4px; }
+  input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  input[type=file]:focus-visible + span { outline: 3px solid var(--teal); outline-offset: 4px; border-radius: 6px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+  input[type=month] { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+  .counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 4px 0 14px; }
+  .counts div { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; }
+  .counts b { display: block; font-size: 26px; line-height: 1.2; }
+  .counts span { color: var(--sub); font-size: 14px; }
+  .counts .send { border-color: var(--teal); }
+  .spark { width: 100%; height: 72px; display: block; }
+  .spark-note { color: var(--sub); font-size: 14px; margin: 4px 0 0; }
+  button {
+    font: 600 17px/1 inherit; font-family: inherit; padding: 14px 22px; border: 0; border-radius: 10px;
+    background: var(--teal); color: #fff; cursor: pointer;
+  }
+  @media (prefers-color-scheme: dark) { button { color: #0f1b1d; } }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; }
+  .result { font-size: 18px; margin: 14px 0 0; }
+  .result.ok { color: var(--teal); }
+  .result.warn { color: var(--amber); }
+  ul.why { margin: 8px 0 0; padding-left: 20px; color: var(--sub); font-size: 15px; }
+  [hidden] { display: none !important; }
+  @media (max-width: 520px) { .counts { grid-template-columns: 1fr; } h1 { font-size: 28px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>측정 기록 올리기</h1>
+  <p class="lead">마이크로비트 데이터 로거에서 받은 CSV를 올리면 교실 기록으로 저장합니다. 같은 파일을 다시 올려도 줄이 겹치지 않습니다.</p>
+
+  <section class="step">
+    <h2>1. 파일 고르기</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".csv,text/csv">
+      <span><strong>CSV 파일을 끌어다 놓거나 눌러서 고르세요</strong>첫 줄에 day, hour, min, light, dust_mv 같은 열 이름이 있어야 합니다</span>
+    </label>
+    <div class="row">
+      <label for="month">측정한 달</label>
+      <input type="month" id="month" value="2026-10">
+      <span class="spark-note">CSV에는 달이 없어서 여기서 정합니다.</span>
+    </div>
+  </section>
+
+  <section class="step" id="preview" hidden>
+    <h2>2. 보내기 전에 확인</h2>
+    <div class="counts">
+      <div><b id="nFile">0</b><span>파일의 줄</span></div>
+      <div><b id="nDup">0</b><span>같은 시각이라 정리한 줄</span></div>
+      <div class="send"><b id="nSend">0</b><span>보낼 줄</span></div>
+    </div>
+    <svg class="spark" id="spark" viewBox="0 0 600 72" preserveAspectRatio="none" role="img" aria-label="먼지 센서 값 흐름"></svg>
+    <p class="spark-note" id="range"></p>
+    <div class="row"><button id="send" type="button">저장하기</button></div>
+    <p class="result" id="result" role="status"></p>
+    <ul class="why" id="why"></ul>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let rows = [];
+
+// 같은 시각(분)이 두 번 있으면 뒤의 줄을 남긴다.
+// 마이크로비트를 켠 직후의 첫 줄은 값이 튀므로(예: 26.05°C) 바로 다음 줄이 맞는 값이다.
+function parse(text, month) {
+  const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.trim());
+  const head = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const col = (name) => head.indexOf(name);
+  const need = ["day", "hour", "min", "light", "motion", "dust_mv", "temp_c", "humid_pct", "press_hpa"];
+  const missing = need.filter((n) => col(n) < 0);
+  if (missing.length) throw new Error(`열 이름이 없습니다: ${missing.join(", ")}`);
+
+  const pad = (n) => String(n).padStart(2, "0");
+  const byTime = new Map();
+  for (const line of lines.slice(1)) {
+    const c = line.split(",");
+    const num = (name) => (c[col(name)] ?? "").trim() === "" ? NaN : Number(c[col(name)]);
+    const ts = `${month}-${pad(num("day"))}T${pad(num("hour"))}:${pad(num("min"))}:00`;
+    byTime.set(ts, {
+      ts, light: num("light"), motion: num("motion"), dust_mv: num("dust_mv"),
+      temp_c: num("temp_c"), humid_pct: num("humid_pct"), press_hpa: num("press_hpa"),
+    });
+  }
+  const out = [...byTime.values()].sort((a, b) => a.ts.localeCompare(b.ts));
+  return { fileRows: lines.length - 1, rows: out };
+}
+
+function drawSpark(list) {
+  const v = list.map((r) => r.dust_mv).filter(Number.isFinite);
+  const max = Math.max(...v, 1);
+  const pts = v.map((y, i) => `${(i / Math.max(v.length - 1, 1)) * 600},${70 - (y / max) * 64}`).join(" ");
+  $("spark").innerHTML =
+    `<polyline points="${pts}" fill="none" stroke="var(--teal)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+  $("range").textContent = `먼지 센서 ${list[0].ts.replace("T", " ")} ~ ${list.at(-1).ts.replace("T", " ")} · 가장 높은 값 ${max} mV`;
+}
+
+async function load(file) {
+  $("result").textContent = ""; $("why").innerHTML = "";
+  try {
+    const p = parse(await file.text(), $("month").value);
+    rows = p.rows;
+    $("nFile").textContent = p.fileRows.toLocaleString();
+    $("nDup").textContent = (p.fileRows - rows.length).toLocaleString();
+    $("nSend").textContent = rows.length.toLocaleString();
+    $("send").textContent = `${rows.length.toLocaleString()}줄 저장하기`;
+    $("send").disabled = rows.length === 0;
+    drawSpark(rows);
+    $("preview").hidden = false;
+  } catch (e) {
+    $("preview").hidden = false;
+    $("send").disabled = true;
+    $("result").className = "result warn";
+    $("result").textContent = `파일을 읽지 못했습니다. ${e.message}`;
+  }
+}
+
+$("file").addEventListener("change", (e) => e.target.files[0] && load(e.target.files[0]));
+$("month").addEventListener("change", () => $("file").files[0] && load($("file").files[0]));
+const drop = $("drop");
+["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => e.dataTransfer.files[0] && load(e.dataTransfer.files[0]));
+
+$("send").addEventListener("click", async () => {
+  $("send").disabled = true;
+  $("result").className = "result";
+  $("result").textContent = "저장하는 중…";
+  $("why").innerHTML = "";
+  try {
+    const res = await fetch("/api/readings", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `서버 응답 ${res.status}`);
+    $("result").className = data.rejected ? "result warn" : "result ok";
+    $("result").textContent = `${data.saved.toLocaleString()}줄 저장 · 범위를 벗어나 거절한 줄 ${data.rejected}개`;
+    $("why").innerHTML = data.rejectedExamples.map((b) => `<li>${b.ts ?? "시각 없음"} — ${b.why}</li>`).join("");
+  } catch (e) {
+    $("result").className = "result warn";
+    $("result").textContent = `저장하지 못했습니다. ${e.message}`;
+  } finally {
+    $("send").disabled = false;
+  }
+});
+</script>
+</body>
+</html>
