@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>교실 환경 지킴이</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #17262a; --sub: #56686d; --surface: #f5f8f8; --card: #ffffff;
+    --line: #cfdcdd; --teal: #12606b; --teal-soft: #e1eeef;
+    --warn: #b4441b; --warn-soft: #fbe9e1; --amber: #c96f22;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e4eeef; --sub: #9cb0b4; --surface: #0f1b1d; --card: #16262a;
+      --line: #2c4247; --teal: #6cc3cc; --teal-soft: #173a3f;
+      --warn: #ff9a73; --warn-soft: #3d221a; --amber: #f0a868;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font: 400 17px/1.55 "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 24px 64px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap; margin-bottom: 28px; }
+  .brand { font-size: 18px; font-weight: 700; color: var(--teal); margin: 0 0 4px; }
+  .clock { font-size: 64px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; margin: 0; font-variant-numeric: tabular-nums; }
+  .day { color: var(--sub); margin: 6px 0 0; }
+  .pick { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+  .pick label { display: grid; gap: 4px; font-size: 14px; color: var(--sub); }
+  .pick input, .pick button {
+    font: inherit; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px;
+    background: var(--card); color: var(--ink);
+  }
+  .pick button { cursor: pointer; }
+  .pick input:focus-visible, .pick button:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+  .status { margin: 0 0 18px; color: var(--sub); min-height: 1.55em; }
+  .status.empty { color: var(--amber); }
+  .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .tile {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 18px 16px; min-height: 150px; display: flex; flex-direction: column;
+  }
+  .tile h2 { font-size: 15px; font-weight: 600; color: var(--sub); margin: 0 0 10px; }
+  .tile .v { font-size: 40px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .tile .v small { font-size: 18px; font-weight: 600; margin-left: 2px; color: var(--sub); }
+  .tile .note { margin-top: auto; padding-top: 10px; font-size: 14px; color: var(--sub); }
+  .tile.bad { border: 2px solid var(--warn); background: var(--warn-soft); }
+  .tile.bad .v, .tile.bad .note { color: var(--warn); }
+  .tile.dim .v { color: var(--sub); }
+  footer { margin-top: 36px; font-size: 14px; color: var(--sub); }
+  footer a { color: var(--teal); }
+  @media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, 1fr); } .clock { font-size: 48px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <p class="brand">교실 환경 지킴이</p>
+      <p class="clock" id="clock">--:--</p>
+      <p class="day" id="day">기록을 불러오는 중</p>
+    </div>
+    <form class="pick" id="pick">
+      <label>날짜 <input type="date" id="date" required></label>
+      <label>시각 <input type="time" id="time" step="300" required></label>
+      <button type="submit">이 시각 보기</button>
+      <button type="button" id="latest">마지막 기록</button>
+    </form>
+  </header>
+
+  <p class="status" id="status" role="status"></p>
+
+  <section class="tiles" aria-label="교실 상태">
+    <article class="tile" id="t-temp"><h2>온도</h2><div class="v">–</div><p class="note"></p></article>
+    <article class="tile" id="t-humid"><h2>습도</h2><div class="v">–</div><p class="note">쾌적 범위 40~60%</p></article>
+    <article class="tile" id="t-dust"><h2>미세먼지 센서</h2><div class="v">–</div><p class="note">상대값 (mV)</p></article>
+    <article class="tile" id="t-light"><h2>조명</h2><div class="v">–</div><p class="note"></p></article>
+    <article class="tile" id="t-people"><h2>재실</h2><div class="v">–</div><p class="note"></p></article>
+  </section>
+
+  <footer>마이크로비트로 5분마다 잰 기록입니다 · <a href="/upload.html">측정 기록 올리기</a></footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const LIGHT_ON = 500; // 조도 500 이상 = 조명 켜짐 (10월 기록에서 300~500 사이 값이 하나도 없음)
+
+function setTile(id, value, unit, note, state) {
+  const el = $(id);
+  el.className = "tile" + (state ? " " + state : "");
+  el.querySelector(".v").innerHTML = unit ? `${value}<small>${unit}</small>` : value;
+  if (note !== undefined) el.querySelector(".note").textContent = note;
+}
+
+function show(data) {
+  if (data.range) {
+    $("date").min = data.range.first.slice(0, 10);
+    $("date").max = data.range.last.slice(0, 10);
+  }
+  if (!data.range) {
+    $("status").className = "status empty";
+    $("status").textContent = "아직 저장된 기록이 없습니다. 아래 '측정 기록 올리기'에서 CSV를 먼저 올리세요.";
+    return;
+  }
+  const at = data.at;
+  $("date").value = at.slice(0, 10);
+  $("time").value = at.slice(11, 16);
+  $("clock").textContent = at.slice(11, 16);
+  const d = new Date(at);
+  $("day").textContent = `${d.getMonth() + 1}월 ${d.getDate()}일 ${"일월화수목금토"[d.getDay()]}요일`;
+
+  if (!data.found) {
+    $("status").className = "status empty";
+    $("status").textContent = `이 시각에는 기록이 없습니다. 기록이 있는 기간: ${data.range.first.slice(5, 16).replace("T", " ")} ~ ${data.range.last.slice(5, 16).replace("T", " ")}`;
+    ["t-temp", "t-humid", "t-dust", "t-light", "t-people"].forEach((id) => setTile(id, "–", "", undefined, "dim"));
+    return;
+  }
+
+  const r = data.reading;
+  $("status").className = "status";
+  $("status").textContent = data.gapMinutes
+    ? `${data.gapMinutes}분 전 기록을 보여 줍니다 (기록은 5분 간격)`
+    : "이 시각의 기록입니다";
+
+  setTile("t-temp", r.temp_c.toFixed(1), "℃", `기압 ${r.press_hpa.toFixed(1)} hPa`);
+  const humidBad = r.humid_pct < 40 || r.humid_pct > 60;
+  setTile("t-humid", r.humid_pct.toFixed(1), "%", humidBad ? "40~60%를 벗어남" : "쾌적 범위 40~60%", humidBad ? "bad" : "");
+  setTile("t-dust", r.dust_mv, "mV", "상대값 (mV)");
+  const on = r.light >= LIGHT_ON;
+  setTile("t-light", on ? "켜짐" : "꺼짐", "", `조도 ${r.light}`, on ? "" : "dim");
+  const people = data.motion15 > 0;
+  setTile("t-people", people ? "있음" : "없음", "", `최근 15분 움직임 ${data.motion15}회`, people ? "" : "dim");
+}
+
+async function load(t) {
+  $("status").className = "status";
+  $("status").textContent = "불러오는 중…";
+  try {
+    const res = await fetch(t ? `/api/state?t=${encodeURIComponent(t)}` : "/api/state");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `서버 응답 ${res.status}`);
+    show(data);
+  } catch (e) {
+    $("status").className = "status empty";
+    $("status").textContent = `기록을 불러오지 못했습니다. ${e.message}`;
+  }
+}
+
+$("pick").addEventListener("submit", (e) => {
+  e.preventDefault();
+  load(`${$("date").value}T${$("time").value.slice(0, 5)}`);
+});
+$("latest").addEventListener("click", () => load());
+load();
+</script>
+</body>
+</html>
