@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사용자 테스트 결과 · 교실 환경 지킴이</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#17262a; --sub:#56686d; --surface:#f5f8f8; --card:#fff; --line:#cfdcdd; --teal:#12606b; --ok:#1d7a4a; --bad:#b4441b; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --ink:#e4eeef; --sub:#9cb0b4; --surface:#0f1b1d; --card:#16262a; --line:#2c4247; --teal:#6cc3cc; --ok:#6fd39c; --bad:#ff9a73; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--surface); color:var(--ink); font:400 17px/1.55 "IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif; }
+  main { max-width: 1060px; margin: 0 auto; padding: 36px 20px 72px; }
+  h1 { font-size: 30px; margin: 0 0 4px; }
+  .lead { color: var(--sub); margin: 0 0 20px; }
+  .sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
+  .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .box h2 { font-size: 15px; color: var(--sub); font-weight: 600; margin: 0 0 8px; }
+  .big { font-size: 36px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .rule { color: var(--sub); font-size: 14px; margin: 8px 0 0; }
+  .pass { color: var(--ok); } .fail { color: var(--bad); }
+  .wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--sub); font-weight: 600; }
+  .row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  button { font: inherit; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  button:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+  @media (max-width: 760px) { .sum { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>사용자 테스트 결과</h1>
+  <p class="lead">/survey.html 로 받은 응답이 모입니다. 열 때마다 새로 계산해요.</p>
+  <div class="sum">
+    <div class="box"><h2>응답 수</h2><div class="big" id="n">–</div><p class="rule">목표 5명 이상 (분대원 제외)</p></div>
+    <div class="box"><h2>S1 · 30초 안에 정답(320분)</h2><div class="big" id="s1">–</div><p class="rule">성공 기준: 5명 중 4명 이상 (80%)</p></div>
+    <div class="box"><h2>S2 · 의견이 갈린 상황 (숫자만 → 카드)</h2><div class="big" id="s2">–</div><p class="rule">성공 기준: 카드를 볼 때 1개 이하</p></div>
+  </div>
+  <div class="wrap"><table>
+    <thead><tr><th>#</th><th>제출 시각</th><th>S1 시간</th><th>S1 답</th><th>숫자만 A·B·C·D·E</th><th>카드 A·B·C·D·E</th><th>의견</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="7">불러오는 중…</td></tr></tbody>
+  </table></div>
+  <div class="row"><button id="reload">새로고침</button><button id="csv">CSV 내려받기</button></div>
+  <p class="rule">약자: 열기 = 창문 연다 · 닫음 = 그대로 둔다 · 공청 = 공기청정기 켠다 · 상황 A 10/22 11:00 · B 10/26 12:00 · C 10/23 14:20 · D 10/21 17:35 · E 10/27 10:50</p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const SITS = ["A", "B", "C", "D", "E"];
+let data = null;
+const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+async function load() {
+  try {
+    const r = await fetch("/api/survey"); data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.status);
+  } catch (e) { $("rows").innerHTML = `<tr><td colspan="7">불러오지 못했어요: ${esc(e.message)}</td></tr>`; return; }
+  const n = data.count;
+  $("n").textContent = `${n}명`;
+  const ok = n ? data.s1Pass / n >= 0.8 : false;
+  $("s1").innerHTML = n ? `<span class="${ok ? "pass" : "fail"}">${n}명 중 ${data.s1Pass}명</span>` : "–";
+  $("s2").innerHTML = data.splitBefore === null ? "2명 이상 필요"
+    : `${data.splitBefore}개 → <span class="${data.splitAfter <= 1 ? "pass" : "fail"}">${data.splitAfter}개</span>`;
+  $("rows").innerHTML = data.rows.map((r, i) => `<tr><td>${i + 1}</td>
+    <td>${new Date(r.created_at).toLocaleString("ko-KR")}</td><td>${r.s1_sec}초</td>
+    <td>${esc(r.s1_answer)} ${r.s1_correct ? "✓" : "✗"}</td>
+    <td>${SITS.map((s) => r.before[s]).join(" · ")}</td><td>${SITS.map((s) => r.after[s]).join(" · ")}</td>
+    <td>${esc(r.feedback) || "–"}</td></tr>`).join("") || `<tr><td colspan="7">아직 응답이 없어요.</td></tr>`;
+}
+$("reload").addEventListener("click", load);
+$("csv").addEventListener("click", () => {
+  if (!data) return;
+  const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const head = ["번호", "제출시각", "S1_초", "S1_답", "S1_정답", ...SITS.map((s) => "숫자만_" + s), ...SITS.map((s) => "카드_" + s), "의견"];
+  const body = data.rows.map((r, i) => [i + 1, new Date(r.created_at).toLocaleString("ko-KR"), r.s1_sec, r.s1_answer, r.s1_correct ? "O" : "X",
+    ...SITS.map((s) => r.before[s]), ...SITS.map((s) => r.after[s]), r.feedback].map(q).join(","));
+  const blob = new Blob(["\ufeff" + [head.map(q).join(","), ...body].join("\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "사용자테스트_결과.csv"; a.click();
+});
+load();
+</script>
+</body>
+</html>
