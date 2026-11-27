@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>테스트 T2·T5 · 교실 환경 지킴이</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#17262a; --sub:#56686d; --surface:#f5f8f8; --card:#fff; --line:#cfdcdd; --teal:#12606b; --ok:#1d7a4a; --bad:#b4441b; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --ink:#e4eeef; --sub:#9cb0b4; --surface:#0f1b1d; --card:#16262a; --line:#2c4247; --teal:#6cc3cc; --ok:#6fd39c; --bad:#ff9a73; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--surface); color:var(--ink); font:400 17px/1.55 "IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif; }
+  main { max-width: 820px; margin: 0 auto; padding: 40px 20px 64px; }
+  h1 { font-size: 30px; margin: 0 0 6px; }
+  .lead { color: var(--sub); margin: 0 0 24px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+  h2 { font-size: 19px; margin: 0 0 4px; }
+  .rule { color: var(--sub); font-size: 15px; margin: 0 0 14px; }
+  button { font: inherit; font-weight: 700; padding: 11px 22px; border: 0; border-radius: 10px; background: var(--teal); color: #fff; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { button { color: #0f1b1d; } }
+  button:disabled { opacity: .5; cursor: default; }
+  button:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 14px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--sub); font-weight: 600; font-size: 14px; }
+  .verdict { font-size: 22px; font-weight: 700; margin: 14px 0 0; }
+  .pass { color: var(--ok); } .fail { color: var(--bad); }
+  textarea { width: 100%; min-height: 150px; margin-top: 8px; font: 14px/1.5 ui-monospace, Consolas, monospace; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+  .meta { color: var(--sub); font-size: 14px; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>테스트 T2 · T5</h1>
+  <p class="lead">배포된 서비스로 직접 재는 테스트입니다. T5는 교실 노트북에서 실행하세요.</p>
+
+  <section>
+    <h2>T5 · 환기 판단 카드가 10초 안에 나오는가 (N-1)</h2>
+    <p class="rule">시각 5개(10월 기록)로 /api/advice를 차례로 불러 걸린 시간을 잽니다.</p>
+    <button id="runT5" type="button">T5 시작 (5번 재기)</button>
+    <table><thead><tr><th>#</th><th>시각</th><th>판단</th><th>걸린 시간</th></tr></thead><tbody id="t5rows"></tbody></table>
+    <p class="verdict" id="t5verdict"></p>
+  </section>
+
+  <section>
+    <h2>T2 · 10월 기록 재생: 먼지 알림 재현율 (S3 [AI] ≥ 0.97)</h2>
+    <p class="rule">저장된 기록 전체를 HAIP 기준값 24개로 다시 판단해, 먼지 높음(300 mV 이상)을 몇 개 잡았는지 셉니다.</p>
+    <button id="runT2" type="button">T2 시작</button>
+    <table><tbody id="t2rows"></tbody></table>
+    <p class="verdict" id="t2verdict"></p>
+  </section>
+
+  <section>
+    <h2>결과 기록 (T2_T5_결과.txt로 저장)</h2>
+    <p class="rule">테스트가 끝나면 아래 글이 채워집니다. 전부 복사해 메모장에 붙여 저장하세요.</p>
+    <textarea id="log" readonly></textarea>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const TIMES = ["2026-10-23T15:00", "2026-10-26T20:00", "2026-10-22T09:50", "2026-10-27T11:45", "2026-10-21T21:00"];
+const lines = { t5: "", t2: "" };
+const now = () => new Date().toLocaleString("ko-KR");
+const writeLog = () => {
+  $("log").value = `교실 환경 지킴이 · 테스트 기록\n측정 기기·브라우저: ${navigator.userAgent}\n\n${lines.t5}\n${lines.t2}`.trim();
+};
+
+$("runT5").addEventListener("click", async () => {
+  $("runT5").disabled = true; $("t5rows").innerHTML = ""; $("t5verdict").textContent = "";
+  const secs = [];
+  for (let i = 0; i < TIMES.length; i++) {
+    const t0 = performance.now();
+    let decision = "오류";
+    try {
+      const res = await fetch(`/api/advice?t=${TIMES[i]}`);
+      const d = await res.json();
+      decision = d.found ? d.decision : "기록 없음";
+    } catch (e) { decision = `오류: ${e.message}`; }
+    const s = (performance.now() - t0) / 1000;
+    secs.push(s);
+    $("t5rows").insertAdjacentHTML("beforeend",
+      `<tr><td>${i + 1}</td><td>${TIMES[i].replace("T", " ")}</td><td>${decision}</td><td>${s.toFixed(2)}초</td></tr>`);
+  }
+  const max = Math.max(...secs), avg = secs.reduce((a, b) => a + b, 0) / secs.length;
+  const pass = max < 10;
+  $("t5verdict").className = "verdict " + (pass ? "pass" : "fail");
+  $("t5verdict").textContent = `${pass ? "통과" : "미통과"} · 평균 ${avg.toFixed(2)}초 · 가장 느림 ${max.toFixed(2)}초 (기준 10초 미만)`;
+  lines.t5 = `[T5 · N-1 판단 카드 10초 안] ${now()}\n` +
+    secs.map((s, i) => `  ${i + 1}. ${TIMES[i].replace("T", " ")} → ${s.toFixed(2)}초`).join("\n") +
+    `\n  결과: ${pass ? "통과" : "미통과"} · 평균 ${avg.toFixed(2)}초 · 최대 ${max.toFixed(2)}초\n`;
+  writeLog();
+  $("runT5").disabled = false;
+});
+
+$("runT2").addEventListener("click", async () => {
+  $("runT2").disabled = true; $("t2rows").innerHTML = "<tr><td>재생하는 중…</td></tr>"; $("t2verdict").textContent = "";
+  try {
+    const res = await fetch("/api/dust?replay=all");
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || res.status);
+    const pass = d.recall >= 0.97;
+    $("t2rows").innerHTML = [
+      ["판단한 기록 (5분 전 값이 있는 것)", d.checked], ["먼지 높음 기록", d.high], ["알림으로 잡음", d.caught],
+      ["놓침", d.missed], ["헛알림 (먼지 낮은데 알림)", d.falseAlarms], ["재현율", d.recall],
+    ].map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("");
+    $("t2verdict").className = "verdict " + (pass ? "pass" : "fail");
+    $("t2verdict").textContent = `${pass ? "통과" : "미통과"} · 재현율 ${d.recall} (기준 0.97 이상, HAIP 처음 보는 날 0.982)`;
+    lines.t2 = `[T2 · F-06 10월 기록 재생] ${now()}\n  먼지 높음 ${d.high}개 중 ${d.caught}개 잡음, 놓침 ${d.missed}, 헛알림 ${d.falseAlarms}\n  재현율 ${d.recall} → ${pass ? "통과" : "미통과"} (S3 기준 0.97)\n`;
+    writeLog();
+  } catch (e) {
+    $("t2rows").innerHTML = `<tr><td>실패: ${e.message}</td></tr>`;
+  }
+  $("runT2").disabled = false;
+});
+</script>
+</body>
+</html>
