@@ -54,13 +54,21 @@
   .tile.bad { border: 2px solid var(--warn); background: var(--warn-soft); }
   .tile.bad .v, .tile.bad .note { color: var(--warn); }
   .tile.dim .v { color: var(--sub); }
-  .row2 { display: grid; grid-template-columns: 1fr 2fr; gap: 14px; margin-top: 14px; }
+  .row2 { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-top: 14px; }
   .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
   .panel h2 { font-size: 15px; font-weight: 600; color: var(--sub); margin: 0 0 10px; }
   .panel .big { font-size: 40px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
   .panel .small { font-size: 14px; color: var(--sub); margin: 8px 0 0; }
   .panel.alarm { border: 2px solid var(--amber); }
   .panel.alarm .big { color: var(--amber); }
+  .advice-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  #judge { font: inherit; font-weight: 700; padding: 10px 26px; border: 0; border-radius: 10px; background: var(--teal); color: #fff; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { #judge { color: #0f1b1d; } }
+  #judge:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; }
+  #judge:disabled { opacity: .5; cursor: default; }
+  .advtemp { font-size: 22px; font-weight: 600; margin: 8px 0 0; min-height: 1.4em; }
+  .panel.go { border: 2px solid var(--teal); }
+  .panel.go .big { color: var(--teal); }
   .tag { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--sub); margin-left: 6px; vertical-align: middle; }
   .bar { position: relative; height: 26px; background: var(--teal-soft); border-radius: 6px; margin: 14px 0 4px; overflow: hidden; }
   .bar span { position: absolute; top: 0; bottom: 0; background: var(--amber); }
@@ -100,19 +108,28 @@
   </section>
 
   <section class="row2">
+    <article class="panel" id="advice">
+      <h2>환기 판단 카드 <span class="tag">AI · HAIP 먼지 알림 + 기준표</span></h2>
+      <div class="advice-head">
+        <div class="big" id="advBig">판단 전</div>
+        <button type="button" id="judge">판단</button>
+      </div>
+      <p class="advtemp" id="advTemp"></p>
+      <p class="small" id="advReason">‘판단’을 누르면 이 시각의 환기 판단이 나와요.</p>
+    </article>
     <article class="panel" id="dust">
       <h2>먼지 높음 알림 <span class="tag">AI · HAIP 모델 추정</span></h2>
       <div class="big" id="dustBig">–</div>
       <p class="small" id="dustNote"></p>
     </article>
-    <article class="panel" id="lights">
-      <h2>이날 빈 교실 조명 <span class="tag">조명 켜짐 + 15분 넘게 움직임 없음</span></h2>
-      <div class="big" id="wasteBig">–</div>
-      <p class="small" id="wasteNote"></p>
-      <div class="bar" id="bar" aria-hidden="true"></div>
-      <div class="ticks"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>24시</span></div>
-      <ul class="periods" id="periods"></ul>
-    </article>
+  </section>
+  <section class="panel" id="lights" style="margin-top:14px">
+    <h2>이날 빈 교실 조명 <span class="tag">조명 켜짐 + 15분 넘게 움직임 없음</span></h2>
+    <div class="big" id="wasteBig">–</div>
+    <p class="small" id="wasteNote"></p>
+    <div class="bar" id="bar" aria-hidden="true"></div>
+    <div class="ticks"><span>0시</span><span>6시</span><span>12시</span><span>18시</span><span>24시</span></div>
+    <ul class="periods" id="periods"></ul>
   </section>
 
   <footer>마이크로비트로 5분마다 잰 기록입니다 · <a href="/upload.html">측정 기록 올리기</a></footer>
@@ -150,6 +167,7 @@ function show(data) {
     $("status").className = "status empty";
     $("status").textContent = `이 시각에는 기록이 없습니다. 기록이 있는 기간: ${data.range.first.slice(5, 16).replace("T", " ")} ~ ${data.range.last.slice(5, 16).replace("T", " ")}`;
     ["t-temp", "t-humid", "t-dust", "t-light", "t-people"].forEach((id) => setTile(id, "–", "", undefined, "dim"));
+    currentTs = null; resetAdvice();
     loadDust(null);
     loadLights(at.slice(0, 10));
     return;
@@ -169,6 +187,7 @@ function show(data) {
   setTile("t-light", on ? "켜짐" : "꺼짐", "", `조도 ${r.light}`, on ? "" : "dim");
   const people = data.motion15 > 0;
   setTile("t-people", people ? "있음" : "없음", "", `최근 15분 움직임 ${data.motion15}회`, people ? "" : "dim");
+  currentTs = r.ts; resetAdvice();
   loadDust(r.ts);
   loadLights(at.slice(0, 10));
 }
@@ -213,6 +232,33 @@ async function loadLights(date) {
       `<li>${p.start.slice(11, 16)}부터 ${p.minutes}분</li>`).join("") || "<li>없음</li>";
   } catch (e) { $("wasteBig").textContent = "–"; $("wasteNote").textContent = `불러오지 못했습니다. ${e.message}`; }
 }
+
+// F-04 환기 판단 카드: '판단'을 눌러야 나온다 (사용자 테스트 S2에서 숫자만 먼저 보여 주기 위해)
+let currentTs = null;
+function resetAdvice() {
+  $("advice").className = "panel";
+  $("advBig").textContent = "판단 전";
+  $("advTemp").textContent = "";
+  $("advReason").textContent = currentTs ? "‘판단’을 누르면 이 시각의 환기 판단이 나와요." : "이 시각에는 기록이 없어 판단할 수 없어요.";
+  $("judge").disabled = !currentTs;
+}
+$("judge").addEventListener("click", async () => {
+  if (!currentTs) return;
+  $("judge").disabled = true;
+  $("advBig").textContent = "판단 중…";
+  const t0 = performance.now();
+  try {
+    const d = await getJSON(`/api/advice?t=${currentTs.slice(0, 16)}`);
+    const sec = ((performance.now() - t0) / 1000).toFixed(1);
+    if (!d.found) { $("advBig").textContent = "판단 불가"; $("advReason").textContent = "이 시각에는 기록이 없어요."; return; }
+    $("advice").className = d.decision.startsWith("환기하지") ? "panel" : (d.decision.startsWith("공기청정기") ? "panel alarm" : "panel go");
+    $("advBig").textContent = d.decision;
+    $("advTemp").textContent = d.temp ? `권장 냉난방 온도 ${d.temp}℃` : "냉난방 없이 지내도 되는 달이에요";
+    $("advReason").textContent = `${d.reason} · 판단 ${sec}초`;
+  } catch (e) {
+    $("advBig").textContent = "–"; $("advReason").textContent = `판단하지 못했습니다. ${e.message}`;
+  } finally { $("judge").disabled = false; }
+});
 
 async function load(t) {
   $("status").className = "status";
